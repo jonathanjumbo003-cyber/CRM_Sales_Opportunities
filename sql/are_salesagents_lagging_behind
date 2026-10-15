@@ -1,0 +1,76 @@
+-- let's see the performers of sales_agents
+
+SELECT
+  sales_agent,
+  COUNT(*) AS total_opportunities,
+  COUNTIF(deal_stage = 'Won') AS won_deals,
+  COUNTIF(deal_stage = 'Lost') AS lost_deals,
+  COUNTIF(deal_stage IN ('Won', 'Lost')) AS closed_opportunities,
+  COUNTIF(deal_stage NOT IN ('Won', 'Lost')) AS open_opportunities,
+  ROUND(SAFE_DIVIDE(COUNTIF(deal_stage = 'Won'), COUNTIF(deal_stage IN ('Won', 'Lost'))) * 100, 2) AS win_deals_pct,
+  SUM(IF(deal_stage = 'Won', close_value, 0)) AS won_revenue,
+  ROUND(AVG(IF(deal_stage = 'Won', close_value, NULL)), 2) AS avg_won_deals_value
+FROM crm_sales_opportunities.sales_pipeline
+GROUP BY
+  sales_agent
+ORDER BY
+  won_revenue DESC;
+
+-- The influence of products on the performance of sales agents. I will only look at Won opportunities.
+
+With product_influence AS (
+  SELECT
+    sales_agent,
+    product,
+    COUNT(*) AS won_product_count,
+    SUM(close_value) AS product_revenue,
+    AVG(close_value) AS avg_product_close_value
+  FROM crm_sales_opportunities.sales_pipeline
+  WHERE
+    deal_stage = 'Won'
+  GROUP BY
+    sales_agent,
+    product
+),
+total_count AS (
+  SELECT
+    sales_agent,
+    COUNTIF(deal_stage = 'Won') AS total_won_count
+  FROM crm_sales_opportunities.sales_pipeline
+  GROUP BY
+    sales_agent
+)
+
+SELECT
+  pi.sales_agent,
+  pi.product,
+  pi.won_product_count,
+  tc.total_won_count,
+  ROUND(SAFE_DIVIDE(pi.won_product_count, tc.total_won_count) * 100, 2) AS won_product_pct,
+  pi.product_revenue,
+  ROUND(pi.avg_product_close_value, 2) AS avg_product_close_value
+FROM product_influence AS pi
+INNER JOIN total_count AS tc
+  ON pi.sales_agent = tc.sales_agent
+ORDER BY
+  pi.sales_agent,
+  won_product_pct DESC;
+
+-- Let's look at the conversion rate of product and the time it tales to close the opportuinity of each product for various sales agent
+
+SELECT
+  sales_agent,
+  product,
+  SUM(CASE WHEN deal_stage = 'Won' THEN 1 ELSE 0 END) AS product_won_deals,
+  SUM(CASE WHEN deal_stage = 'Lost' THEN 1 ELSE 0 END) AS product_lost_deals,
+  SUM(CASE WHEN deal_stage IN ('Won', 'Lost') THEN 1 ELSE 0 END) AS total_closed_opportunities,
+  ROUND(SAFE_DIVIDE(SUM(CASE WHEN deal_stage = 'Won' THEN 1 ELSE 0 END), SUM(CASE WHEN deal_stage IN ('Won', 'Lost') THEN 1 ELSE 0 END)) * 100, 2) AS product_win_pct,
+  ROUND(AVG(IF(deal_stage IN ('Won', 'Lost') AND engage_date IS NOT NULL AND close_date IS NOT NULL AND close_date > engage_date, DATE_DIFF(close_date, engage_date, DAY), NULL)), 2) AS avg_product_close_time
+FROM crm_sales_opportunities.sales_pipeline
+GROUP BY
+  sales_agent,
+  product
+ORDER BY
+  sales_agent,
+  product_win_pct DESC;
+
