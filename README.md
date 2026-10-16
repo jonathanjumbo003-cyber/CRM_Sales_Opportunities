@@ -34,6 +34,149 @@ The results showed why it is important to look at more than one metric when eval
 
 I also compared managers' revenue quarter by quarter to understand how their performance changed throughout the year.
 
+```sql
+/* To get a clear picture of the performance of sales teams, i grouped based on the managers leading each teams. */
+
+WITH performance AS (
+  SELECT
+    teams.manager AS manager,
+    sales.sales_agent AS sales_agent,
+    sales.deal_stage AS deal_stage,
+    sales.close_value AS close_value
+  FROM crm_sales_opportunities.sales_pipeline as sales
+  INNER JOIN crm_sales_opportunities. sales_teams AS teams
+    ON sales.sales_agent = teams.sales_agent
+)
+
+SELECT
+  performance.manager,
+  COUNTIF(performance.deal_stage = 'Won') AS deals_won,
+  COUNTIF(performance.deal_stage = 'Lost') AS deal_lost,
+  ROUND(SAFE_DIVIDE(COUNTIF(performance.deal_stage = 'Won'), COUNTIF(performance.deal_stage IN ('Won', 'Lost'))) * 100, 2) AS win_success_pct,
+  SUM(IF(performance.deal_stage = 'Won', performance.close_value, 0)) AS won_revenue,
+  ROUND(AVG(IF(performance.deal_stage = 'Won', performance.close_value, NULL)), 2) AS avg_deal_won_value
+FROM performance
+GROUP BY
+  performance.manager
+ORDER BY
+  win_success_pct DESC;
+
+-- checking if there is a problem with won deals
+
+SELECT
+  COUNT(*) AS won_deals,
+  COUNTIF(close_value IS NULL) AS missing_values,
+  COUNTIF(close_value = 0) AS zero_value_won_deals,
+  MIN(close_value) AS min_value,
+  MAX(close_value) AS max_value
+FROM crm_sales_opportunities.sales_pipeline
+WHERE
+  deal_stage = 'Won';
+
+-- I want to run a check for products cause i'm interested in why Dustin's team average is lowers than other's
+
+WITH product1 AS (
+  SELECT DISTINCT
+    product
+  FROM crm_sales_opportunities.sales_pipeline
+),
+product2 AS (
+  SELECT
+    product,
+    COUNT(*) AS product_app
+  FROM crm_sales_opportunities.products
+  GROUP BY
+    product
+)
+
+SELECT
+  COUNT(*) AS product_count,
+  SUM(CASE WHEN p2.product_app is NULL THEN 1 ELSE 0 END) AS missing_product,
+  SUM(CASE WHEN p2.product_app > 1 THEN 1 ELSE 0 END) AS duplicate_product
+FROM product1 AS p1
+LEFT JOIN product2 AS p2
+  ON p1.product = p2.product;
+
+-- What are the contributions of each product to a teams successful deals.
+
+WITH manager_product_win AS (
+  SELECT
+    teams.manager AS manager,
+    sales.product AS product,
+    COUNT(*) AS won_deals,
+    SUM(sales.close_value) AS won_revenue,
+    AVG(sales.close_value) AS avg_won_price
+  FROM crm_sales_opportunities.sales_pipeline AS sales
+  INNER JOIN crm_sales_opportunities.sales_teams AS teams
+    ON sales.sales_agent = teams.sales_agent
+  WHERE
+    sales.deal_stage = 'Won'
+  GROUP BY
+    teams.manager,
+    sales.product
+),
+manager_total AS (
+  SELECT
+    manager_product_win.manager AS manager,
+    SUM(manager_product_win.won_deals) As total_won_deals
+  FROM manager_product_win
+  GROUP BY
+    manager_product_win.manager
+)
+
+SELECT
+  mp.manager,
+  mp.product,
+  mp.won_deals,
+  mt.total_won_deals,
+  ROUND(SAFE_DIVIDE(mp.won_deals, mt.total_won_deals) * 100, 2) AS won_deal_pct,
+  mp.won_revenue,
+  ROUND(mp.avg_won_price, 2) AS avg_won_price
+FROM manager_product_win AS mp
+INNER JOIN manager_total AS mt
+  ON mp.manager = mt.manager
+ORDER BY
+  mp.manager,
+  won_deal_pct DESC;
+
+-- Now let's check the win percentage of each manager in different products
+
+SELECT
+  teams.manager,
+  sales.product,
+  SUM(CASE WHEN sales.deal_stage = 'Won' THEN 1 ELSE 0 END) AS won_deals,
+  SUM(CASE WHEN deal_stage = 'Lost' THEN 1 ELSE 0 END) AS lost_deals,
+  SUM(CASE WHEN deal_stage IN ('Won', 'Lost') THEN 1 ELSE 0 END) AS closed_opportunities,
+  ROUND(SAFE_DIVIDE(SUM(CASE WHEN sales.deal_stage = 'Won' THEN 1 ELSE 0 END), SUM(CASE WHEN deal_stage IN ('Won', 'Lost') THEN 1 ELSE 0 END)) * 100, 2) AS product_win_pct
+FROM crm_sales_opportunities.sales_pipeline AS sales
+INNER JOIN crm_sales_opportunities.sales_teams AS teams
+  ON sales.sales_agent = teams.sales_agent
+GROUP BY
+  teams.manager,
+  sales.product
+ORDER BY
+  sales.product,
+  product_win_pct DESC;
+
+-- let's see how long it takes a team to win a deal for each product
+
+SELECT
+  teams.manager,
+  sales.product,
+  ROUND(AVG(DATE_DIFF(sales.close_date, sales.engage_date, DAY)), 2) AS avg_won_deals_days
+FROM crm_sales_opportunities.sales_pipeline AS sales
+INNER JOIN crm_sales_opportunities.sales_teams AS teams
+  ON sales.sales_agent = teams.sales_agent
+WHERE
+  sales.deal_stage = 'Won'
+GROUP BY
+  teams.manager,
+  sales.product
+ORDER BY
+  sales.product,
+  avg_won_deals_days
+```
+
 ### 2. Product Performance Across Sales Teams
 
 I analysed product performance by manager to compare won deals, won revenue, average won-deal value, win rate, and average days to win.
