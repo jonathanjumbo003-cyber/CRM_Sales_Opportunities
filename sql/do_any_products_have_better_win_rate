@@ -1,0 +1,13 @@
+-- To answer this question we will be looking at closed opportunities only.
+
+SELECT
+  product,
+  COUNTIF(deal_stage = 'Won') AS won_deals,
+  COUNTIF(deal_stage = 'Lost') AS lost_deals,
+  COUNTIF(deal_stage IN ('Won', 'Lost')) AS total_closed_deals,
+  ROUND(SAFE_DIVIDE(COUNTIF(deal_stage = 'Won'), COUNTIF(deal_stage IN ('Won', 'Lost'))) * 100, 2) AS win_rate_pct
+FROM crm_sales_opportunities.sales_pipeline
+GROUP BY
+  product
+ORDER BY
+  win_rate_pct DESC
