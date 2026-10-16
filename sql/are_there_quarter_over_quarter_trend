@@ -1,0 +1,164 @@
+/* I want to see if there is a quarter over quarter trend, for this i will write 4 sql queries, targeting the overall performance, teams performance, sales agent performance and product performance. */
+
+-- Overall performance QoQ trend analysis
+
+WITH quarter_analysis1 AS (
+  SELECT
+    DATE_TRUNC(close_date, QUARTER) AS sales_quarter,
+    SUM(close_value) AS won_revenue
+  FROM crm_sales_opportunities.sales_pipeline
+  WHERE
+    deal_stage = 'Won' And
+    close_date IS NOT NULL
+  GROUP BY
+    DATE_TRUNC(close_date, QUARTER)
+),
+quarter_analysis2 AS (
+  SELECT
+    sales_quarter,
+    won_revenue,
+    LAG(won_revenue) OVER (
+      ORDER BY sales_quarter
+    ) AS previous_revenue
+  FROM quarter_analysis1
+)
+
+SELECT
+  sales_quarter,
+  won_revenue,
+  previous_revenue,
+  ROUND(SAFE_DIVIDE(won_revenue - previous_revenue, previous_revenue) * 100, 2) AS QoQ
+FROM quarter_analysis2
+ORDER BY
+  sales_quarter;
+
+-- let's get the number of won deals and the avg price of products for this quarters
+
+SELECT
+  DATE_TRUNC(close_date, QUARTER) AS sales_quarter,
+  COUNT(*) AS won_deals,
+  ROUND(AVG(close_value), 2) AS avg_price_per_quarter
+FROM crm_sales_opportunities.sales_pipeline
+WHERE
+  deal_stage = 'Won' AND
+  close_date IS NOT NULL
+GROUP BY
+  sales_quarter
+ORDER BY
+  sales_quarter;
+
+-- Team QoQ trend analysis
+
+WITH team_quarter_analysis1 AS (
+  SELECT
+    teams.manager AS managers,
+    DATE_TRUNC(sales.close_date, QUARTER) AS sales_quarter,
+    SUM(sales.close_value) AS won_revenue
+  FROM `crm_sales_opportunities.sales_pipeline` AS sales
+  INNER JOIN `crm_sales_opportunities.sales_teams` AS teams
+    ON sales.sales_agent = teams.sales_agent
+  WHERE
+    sales.deal_stage = 'Won' AND
+    sales.close_date IS NOT NULL
+  GROUP BY
+    managers,
+    sales_quarter
+),
+team_quarter_analysis2 AS (
+  SELECT
+    managers,
+    sales_quarter,
+    won_revenue,
+    LAG(won_revenue) OVER(
+      PARTITION BY managers
+      ORDER BY sales_quarter
+    ) AS previous_revenue
+  FROM team_quarter_analysis1
+)
+
+SELECT
+  managers,
+  sales_quarter,
+  won_revenue,
+  previous_revenue,
+  ROUND(SAFE_DIVIDE(won_revenue - previous_revenue, previous_revenue) * 100, 2) AS team_QoQ
+FROM team_quarter_analysis2
+ORDER BY
+  managers,
+  sales_quarter;
+
+-- Sales agent QoQ trend analysis
+
+WITH salesagent_quarter_analysis1 AS (
+  SELECT
+    sales_agent,
+    DATE_TRUNC(close_date, QUARTER) AS sales_quarter,
+    SUM(close_value) AS won_revenue
+  FROM crm_sales_opportunities.sales_pipeline
+  WHERE
+    deal_stage = 'Won' AND
+    close_date IS NOT NULL
+  GROUP BY
+    sales_agent,
+    sales_quarter
+),
+salesagent_quarter_analysis2 AS (
+  SELECT
+    sales_agent,
+    sales_quarter,
+    won_revenue,
+    LAG(won_revenue) OVER (
+      PARTITION BY sales_agent
+      ORDER BY sales_quarter
+    ) AS previous_revenue
+  FROM salesagent_quarter_analysis1
+)
+
+SELECT
+  sales_agent,
+  sales_quarter,
+  won_revenue,
+  previous_revenue,
+  ROUND(SAFE_DIVIDE(won_revenue - previous_revenue, previous_revenue) * 100, 2) AS agent_QoQ
+FROM salesagent_quarter_analysis2
+ORDER BY
+  sales_agent,
+  sales_quarter;
+
+-- Product QoQ trend analysis
+
+WITH product_quarter_analysis1 AS (
+  SELECT
+    product,
+    DATE_TRUNC(close_date, QUARTER) AS sales_quarter,
+    SUM(close_value) AS won_revenue
+  FROM crm_sales_opportunities.sales_pipeline
+  WHERE
+    deal_stage = 'Won' And
+    close_date IS NOT NULL
+  GROUP BY
+    product,
+    sales_quarter
+),
+product_quarter_analysis2 AS (
+  SELECT
+    product,
+    sales_quarter,
+    won_revenue,
+    LAG(won_revenue) OVER (
+      PARTITION BY product
+      ORDER BY sales_quarter
+    ) AS previous_revenue
+  FROM product_quarter_analysis1
+)
+
+SELECT
+  product,
+  sales_quarter,
+  won_revenue,
+  previous_revenue,
+  ROUND(SAFE_DIVIDE(won_revenue - previous_revenue, previous_revenue) * 100, 2) AS product_QoQ
+FROM product_quarter_analysis2
+ORDER BY
+  product,
+  sales_quarter
